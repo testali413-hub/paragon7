@@ -77,8 +77,8 @@ jobs:
           fi
 
           send_message "☁️ آپلود روی گوگل درایو..."
-          rclone mkdir "gdrive:/TelegramDownloads"
-          rclone copy "./$FILENAME" "gdrive:/TelegramDownloads/" --progress
-          DL_LINK=$(rclone link "gdrive:/TelegramDownloads/$FILENAME")
+          rclone mkdir "gdrive:TelegramDownloads" --drive-root-folder-id 1T14NZKLvtEjFLeUNq0eUrOTM6fwiHzar
+          rclone copy "./$FILENAME" "gdrive:TelegramDownloads" --drive-root-folder-id 1T14NZKLvtEjFLeUNq0eUrOTM6fwiHzar --progress
+          DL_LINK=$(rclone link "gdrive:TelegramDownloads/$FILENAME" --drive-root-folder-id 1T14NZKLvtEjFLeUNq0eUrOTM6fwiHzar)
           send_message "✅ آپلود شد!%0A%0A📎 $DL_LINK"
           rm -f "$FILENAME"
