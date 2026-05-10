@@ -28,11 +28,6 @@ jobs:
         with:
           rclone_config: ${{ secrets.RCLONE_CONFIG }}
 
-      - name: Write SA key file
-        run: echo "$SA_JSON" > /home/runner/sa.json
-        env:
-          SA_JSON: ${{ secrets.SA_JSON }}
-
       - name: Write cookies file
         run: echo "$YOUTUBE_COOKIES" > /home/runner/cookies.txt
         env:
@@ -77,8 +72,8 @@ jobs:
           fi
 
           send_message "☁️ آپلود روی گوگل درایو..."
-          rclone mkdir "gdrive:TelegramDownloads" --drive-root-folder-id 1T14NZKLvtEjFLeUNq0eUrOTM6fwiHzar
-          rclone copy "./$FILENAME" "gdrive:TelegramDownloads" --drive-root-folder-id 1T14NZKLvtEjFLeUNq0eUrOTM6fwiHzar --progress
-          DL_LINK=$(rclone link "gdrive:TelegramDownloads/$FILENAME" --drive-root-folder-id 1T14NZKLvtEjFLeUNq0eUrOTM6fwiHzar)
+          rclone mkdir "gdrive:TelegramDownloads"
+          rclone copy "./$FILENAME" "gdrive:TelegramDownloads" --progress
+          DL_LINK=$(rclone link "gdrive:TelegramDownloads/$FILENAME")
           send_message "✅ آپلود شد!%0A%0A📎 $DL_LINK"
           rm -f "$FILENAME"
