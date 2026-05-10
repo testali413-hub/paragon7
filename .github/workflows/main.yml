@@ -33,6 +33,11 @@ jobs:
         env:
           SA_JSON: ${{ secrets.SA_JSON }}
 
+      - name: Write cookies file
+        run: echo "$YOUTUBE_COOKIES" > /home/runner/cookies.txt
+        env:
+          YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
+
       - name: Run main process
         env:
           TYPE: ${{ github.event.inputs.download_type }}
@@ -53,8 +58,8 @@ jobs:
 
           if [ "$TYPE" = "url" ]; then
             send_message "⬇️ در حال دانلود لینک..."
-            FILENAME=$(yt-dlp --print filename -o "%(title).200s.%(ext)s" "$SOURCE")
-            yt-dlp -o "$FILENAME" "$SOURCE"
+            FILENAME=$(yt-dlp --cookies /home/runner/cookies.txt --print filename -o "%(title).200s.%(ext)s" "$SOURCE")
+            yt-dlp --cookies /home/runner/cookies.txt -o "$FILENAME" "$SOURCE"
           elif [ "$TYPE" = "file" ]; then
             send_message "📎 دریافت اطلاعات فایل تلگرام..."
             FILE_INFO=$(curl -s "https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${SOURCE}")
