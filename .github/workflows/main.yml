@@ -37,14 +37,14 @@ jobs:
       - name: Setup rclone (only install)
         uses: AnimMouse/setup-rclone@v1
 
-      - name: Configure rclone from secret
+      - name: Configure rclone
         run: |
           mkdir -p ~/.config/rclone
           echo "$RCLONE_CFG" > ~/.config/rclone/rclone.conf
         env:
           RCLONE_CFG: ${{ secrets.RCLONE_CONFIG }}
 
-      - name: Run main process
+      - name: Download and Upload
         env:
           TYPE: ${{ github.event.inputs.download_type }}
           SOURCE: ${{ github.event.inputs.download_source }}
@@ -55,94 +55,54 @@ jobs:
         run: |
           #!/bin/bash
 
-          # توابع پیام‌رسانی با User-Agent
-          send_message() {
+          send_msg() {
             curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-              -H "User-Agent: MyTelegramBot/1.0" \
-              -d "chat_id=${CHAT_ID}" -d "text=$1" | jq -r '.result.message_id'
+              -d "chat_id=${CHAT_ID}" -d "text=$1" > /dev/null
           }
 
-          edit_message() {
-            curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/editMessageText" \
-              -H "User-Agent: MyTelegramBot/1.0" \
-              -d "chat_id=${CHAT_ID}" -d "message_id=$1" -d "text=$2" > /dev/null
-          }
-
-          # آماده‌سازی فایل کوکی
+          # کوکی‌ها
           COOKIES_ARG=""
           if [ -n "$COOKIES_BASE64" ]; then
-            echo "$COOKIES_BASE64" | base64 -d > /tmp/cookies.txt
-            COOKIES_ARG="--cookies /tmp/cookies.txt"
+            echo "$COOKIES_BASE64" | base64 -d > cookies.txt
+            COOKIES_ARG="--cookies cookies.txt"
           elif [ -n "$YOUTUBE_COOKIES" ]; then
-            echo "$YOUTUBE_COOKIES" > /tmp/cookies.txt
-            COOKIES_ARG="--cookies /tmp/cookies.txt"
+            echo "$YOUTUBE_COOKIES" > cookies.txt
+            COOKIES_ARG="--cookies cookies.txt"
           fi
 
-          # شروع
-          MSG_ID=$(send_message "⏳ پردازش شروع شد...")
+          send_msg "⏳ شروع دانلود..."
 
           if [ "$TYPE" = "url" ]; then
-            # پیش‌بینی نام فایل
-            FILENAME=$(yt-dlp $COOKIES_ARG --print filename -o "%(title).200s.%(ext)s" "$SOURCE" 2>/dev/null || true)
-            if [ -z "$FILENAME" ]; then
-              edit_message "$MSG_ID" "❌ خطا در دریافت اطلاعات."
+            if ! yt-dlp $COOKIES_ARG -o "downloaded_file.%(ext)s" --merge-output-format mkv --no-part "$SOURCE"; then
+              send_msg "❌ دانلود شکست خورد"
               exit 1
             fi
-
-            # دانلود با نمایش درصد (بدون pipefail خطرناک)
-            yt-dlp $COOKIES_ARG --newline -o "$FILENAME" \
-              --merge-output-format mkv --no-part "$SOURCE" 2>&1 | tee /tmp/yt-log.txt | \
-              while IFS= read -r line; do
-                if [[ "$line" =~ ([0-9.]+)% ]]; then
-                  PERCENT="${BASH_REMATCH[1]}"
-                  edit_message "$MSG_ID" "⬇️ دانلود: ${PERCENT}%"
-                elif [[ "$line" == *"Merging formats"* ]]; then
-                  edit_message "$MSG_ID" "🔄 در حال ادغام فرمت‌ها..."
-                fi
-              done
-            # بررسی موفقیت دانلود
-            if [ ! -f "$FILENAME" ]; then
-              LAST_LOG=$(cat /tmp/yt-log.txt | tail -10)
-              if echo "$LAST_LOG" | grep -qi "sign in"; then
-                edit_message "$MSG_ID" "⚠️ این سایت نیاز به احراز هویت دارد.
-لطفاً فایل cookies.txt را به این پیام ریپلای کنید.
-URL: $SOURCE"
-                exit 0
-              else
-                edit_message "$MSG_ID" "❌ دانلود ناموفق."
-                exit 1
-              fi
-            fi
+            FILENAME=$(ls downloaded_file.*)
           elif [ "$TYPE" = "file" ]; then
-            edit_message "$MSG_ID" "📥 دریافت فایل از تلگرام..."
+            send_msg "📥 دریافت فایل تلگرام..."
             FILE_INFO=$(curl -s "https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${SOURCE}")
             FILE_PATH=$(echo "$FILE_INFO" | jq -r '.result.file_path')
             if [ "$FILE_PATH" = "null" ] || [ -z "$FILE_PATH" ]; then
-              edit_message "$MSG_ID" "❌ خطا در دریافت فایل."
+              send_msg "❌ خطا در دریافت فایل"
               exit 1
             fi
             FILENAME=$(basename "$FILE_PATH")
-            curl -# -L -o "$FILENAME" "https://api.telegram.org/file/bot${BOT_TOKEN}/${FILE_PATH}" 2>&1 | \
-              grep -o '[0-9.]*%' | tail -1 | while read percent; do
-                edit_message "$MSG_ID" "📥 دانلود: ${percent}"
-              done
+            if ! curl -L -o "$FILENAME" "https://api.telegram.org/file/bot${BOT_TOKEN}/${FILE_PATH}"; then
+              send_msg "❌ دانلود فایل شکست خورد"
+              exit 1
+            fi
           else
-            edit_message "$MSG_ID" "❌ نوع نامعتبر."
+            send_msg "❌ نوع نامعتبر"
             exit 1
           fi
 
-          # آپلود
-          edit_message "$MSG_ID" "☁️ در حال آپلود ${FILENAME}..."
+          send_msg "☁️ آپلود روی گوگل درایو..."
           rclone mkdir "gdrive:TelegramDownloads"
-          rclone copy "./$FILENAME" "gdrive:TelegramDownloads" --progress 2>&1 | tee /tmp/rclone-log.txt | \
-            while IFS= read -r line; do
-              if [[ "$line" =~ ([0-9.]+)% ]]; then
-                PERCENT="${BASH_REMATCH[1]}"
-                edit_message "$MSG_ID" "☁️ آپلود: ${PERCENT}%"
-              fi
-            done
+          if ! rclone copy "./$FILENAME" "gdrive:TelegramDownloads"; then
+            send_msg "❌ آپلود شکست خورد"
+            exit 1
+          fi
 
-          # لینک نهایی
           DL_LINK=$(rclone link "gdrive:TelegramDownloads/$FILENAME")
-          edit_message "$MSG_ID" "✅ آپلود شد!%0A%0A📎 $DL_LINK"
-          rm -f "$FILENAME"
+          send_msg "✅ آپلود شد!%0A%0A📎 $DL_LINK"
+          rm -f "$FILENAME" cookies.txt
